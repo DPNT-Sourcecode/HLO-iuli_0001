@@ -5,7 +5,6 @@ import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.LoggerFactory;
-import tdl.record.screen.metrics.VideoRecordingMetricsCollector;
 import tdl.record.sourcecode.metrics.SourceCodeRecordingMetricsCollector;
 import tdl.record_upload.events.ExternalEventServerThread;
 import tdl.record_upload.logging.LockableFileLoggingAppender;
@@ -14,7 +13,6 @@ import tdl.record_upload.sourcecode.SourceCodeRecordingThread;
 import tdl.record_upload.upload.BackgroundRemoteSyncTask;
 import tdl.record_upload.upload.UploadStatsProgressStatus;
 import tdl.record_upload.video.NoVideoDummyThread;
-import tdl.record_upload.video.VideoRecordingStatus;
 import tdl.record_upload.video.VideoRecordingThread;
 import tdl.s3.credentials.AWSSecretProperties;
 import tdl.s3.sync.destination.Destination;
@@ -98,12 +96,17 @@ public class RecordAndUploadApp {
 
         // Start video recording
         boolean recordVideo = !doNotRecordVideo;
+        MonitoredBackgroundTask videoRecordingTask;
         if (recordVideo) {
-            startVideoRecording(localStorageFolder, timestamp,
-                    serviceThreadsToStop, monitoredSubjects, externalEventServerThread);
+            File screenRecordingFile = Paths.get(localStorageFolder, "screencast_" + timestamp + ".mp4").toFile();
+            videoRecordingTask = new VideoRecordingThread(screenRecordingFile);
         } else {
-            showNoVideoWarning(serviceThreadsToStop, monitoredSubjects, externalEventServerThread);
+            videoRecordingTask = new NoVideoDummyThread();
         }
+        videoRecordingTask.start();
+        serviceThreadsToStop.add(videoRecordingTask);
+        monitoredSubjects.add(videoRecordingTask);
+        externalEventServerThread.addStopListener(videoRecordingTask);
 
         // Start sourcecode recording
         startSourceCodeRecording(localStorageFolder, localSourceCodeFolder, timestamp,
@@ -143,28 +146,6 @@ public class RecordAndUploadApp {
 
         // Forcefully stop. A problem with Jetty finalisation might prevent the JVM from stopping
         Runtime.getRuntime().halt(0);
-    }
-
-    private static void startVideoRecording(String localStorageFolder, String timestamp,
-                                            List<Stoppable> serviceThreadsToStop,
-                                            List<MonitoredSubject> monitoredSubjects,
-                                            ExternalEventServerThread externalEventServerThread) {
-        File screenRecordingFile = Paths.get(localStorageFolder, "screencast_" + timestamp + ".mp4").toFile();
-        VideoRecordingThread videoRecordingThread = new VideoRecordingThread(screenRecordingFile);
-        videoRecordingThread.start();
-        serviceThreadsToStop.add(videoRecordingThread);
-        monitoredSubjects.add(videoRecordingThread);
-        externalEventServerThread.addStopListener(videoRecordingThread);
-    }
-
-    private static void showNoVideoWarning(List<Stoppable> serviceThreadsToStop,
-                                           List<MonitoredSubject> monitoredSubjects,
-                                           ExternalEventServerThread externalEventServerThread) {
-        NoVideoDummyThread noVideo = new NoVideoDummyThread();
-        serviceThreadsToStop.add(noVideo);
-        monitoredSubjects.add(noVideo);
-        externalEventServerThread.addStopListener(noVideo);
-
     }
 
     private static void startSourceCodeRecording(String localStorageFolder, String localSourceCodeFolder, String timestamp,

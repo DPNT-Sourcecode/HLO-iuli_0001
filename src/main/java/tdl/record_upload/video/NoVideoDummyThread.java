@@ -16,6 +16,11 @@ public class NoVideoDummyThread implements MonitoredBackgroundTask {
     }
 
     @Override
+    public void start() {
+        // Do nothing
+    }
+
+    @Override
     public boolean isActive() {
         return isRunning;
     }
